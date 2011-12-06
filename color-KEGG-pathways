@@ -2,8 +2,8 @@
 
 __version_major__ = 1
 __version_minor__ = 0
-__revision__ = 3
-__build__ = "F721136"
+__revision__ = 4
+__build__ = "DB2CC31"
 
 import optparse
 import sys, os
