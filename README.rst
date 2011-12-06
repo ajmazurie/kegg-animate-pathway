@@ -3,7 +3,7 @@ color-KEGG-pathways
 
 **color-KEGG-pathways** is a command-line utility which interfaces with the `KEGG <http://www.genome.jp/kegg/>`_ `API <http://www.genome.jp/kegg/soap/doc/keggapi_manual.html>`_ to produce color-coded figures of pathways. Any enzyme, metabolite or sub-pathway normally visible in a KEGG pathway can be painted with arbitrary color to represent quantitative or qualitative information such as expression level, presence or absence, etc. Here is an example:
 
-.. figure:: http://github.com/ajmazurie/color-KEGG-pathways/raw/master/doc/example.png
+.. figure:: http://github.com/ajmazurie/color-KEGG-pathways/raw/master/examples/example.png
 	:align: center
 	:alt: Example of color-coded pathway
 
@@ -37,7 +37,7 @@ More than one pathway can be referred to in the same input file; **color-KEGG-pa
 Latest version
 --------------
 
-The current version is 1.0rev4
+The current version is 1.0rev5
 
 Installation
 ------------
@@ -164,7 +164,7 @@ Example 1
 
 Coloring the enzymes of the *Saccharomyces cerevisiae* citrate/TCA cycle (pathway identifier *sce00020*) with a rainbow pattern, and the metabolites in red.
 
-Content of `example_1.csv <https://raw.github.com/ajmazurie/color-KEGG-pathways/master/doc/example_1.csv>`_::
+Content of `example_1.csv <https://raw.github.com/ajmazurie/color-KEGG-pathways/master/examples/example_1.csv>`_::
 
 	sce00020,sce:YCR005C,ff0000
 	sce00020,sce:YNR001C,ff1f00
@@ -225,7 +225,7 @@ Command-line syntax::
 
 Resulting picture:
 
-.. image:: http://github.com/ajmazurie/color-KEGG-pathways/raw/master/doc/example_1.png
+.. image:: http://github.com/ajmazurie/color-KEGG-pathways/raw/master/examples/example_1.png
 	:align: center
 
 Example 2
@@ -241,7 +241,7 @@ Hence, to create a new version of the figure above with only missing genes being
 
 Resulting picture:
 
-.. image:: http://github.com/ajmazurie/color-KEGG-pathways/raw/master/doc/example_2.png
+.. image:: http://github.com/ajmazurie/color-KEGG-pathways/raw/master/examples/example_2.png
 	:align: center
 
 In this case no missing gene can be found. Note that white rectangles are a way for KEGG to show that the genes corresponding to a given enzyme are not found in this particular species.
@@ -251,7 +251,7 @@ Example 3
 
 Let now use another input file, in which genes are not provided with colors but with some measurements, such as expression ratios. By using the *--two-color-scale* option **color-KEGG-pathways** will set the color of these genes as an interpolation between a *start* and an *end* color (which can be modified using the *--start-color* and *--end-color* options, respectively). *--two-color-scale* must be provided with the measure associated to the start color and the stop color; the *min* and *max* placeholders can be used to represent the minimum and maximum value in the input file, respectively.
 
-Content of `example_3.csv <https://raw.github.com/ajmazurie/color-KEGG-pathways/master/doc/example_3.csv>`_::
+Content of `example_3.csv <https://raw.github.com/ajmazurie/color-KEGG-pathways/master/examples/example_3.csv>`_::
 
 	sce00020,sce:YCR005C,0.126282121306
 	sce00020,sce:YNR001C,0.732643560422
@@ -293,7 +293,7 @@ Command-line syntax::
 
 Resulting picture:
 
-.. image:: http://github.com/ajmazurie/color-KEGG-pathways/raw/master/doc/example_3.png
+.. image:: http://github.com/ajmazurie/color-KEGG-pathways/raw/master/examples/example_3.png
 	:align: center
 
 In this example the gene with the minimum measure received the color set by *--start-color*, while the gene with the maximum measure received the color set by *--end-color*. All the genes in between received a color interpolated between these two colors.
@@ -309,7 +309,7 @@ This can be done using the *--three-color-scale* option. Similarly to *--two-col
 
 In addition to the *--start-color* and *--end-color* options seen above, you can use the *--midpoint-color* to set the color of the midpoint.
 
-Content of `example_4.csv <https://raw.github.com/ajmazurie/color-KEGG-pathways/master/doc/example_4.csv>`_::
+Content of `example_4.csv <https://raw.github.com/ajmazurie/color-KEGG-pathways/master/examples/example_4.csv>`_::
 
 	sce00020,sce:YCR005C,0.126282121306
 	sce00020,sce:YNR001C,0.732643560422
@@ -351,7 +351,7 @@ Command-line syntax::
 
 Resulting picture:
 
-.. image:: http://github.com/ajmazurie/color-KEGG-pathways/raw/master/doc/example_4.png
+.. image:: http://github.com/ajmazurie/color-KEGG-pathways/raw/master/examples/example_4.png
 	:align: center
 
 Note about colors
