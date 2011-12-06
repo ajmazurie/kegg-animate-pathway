@@ -37,7 +37,7 @@ More than one pathway can be referred to in the same input file; **color-KEGG-pa
 Latest version
 --------------
 
-The current version is 1.0rev5
+The current version is 1.0rev7
 
 Installation
 ------------
@@ -46,7 +46,7 @@ To install **color-KEGG-pathways** you must go through the following steps:
 
 - ensure a Python interpreter (version 2.6 or 2.7; 3.0 and later are not supported yet) is installed in your system. Please refer to this `page <http://www.python.org/getit/>`_ if needed.
 - ensure the `SUDS <http://fedorahosted.org/suds/>`_, `PyX <http://pyx.sourceforge.net/>`_ and `PIL <http://www.pythonware.com/products/pil/>`_ libraries are installed. A quick way to install those is to first install *easy_install* (see the `documentation <http://pypi.python.org/pypi/setuptools>`_) then type *easy_install suds*, *easy_install pyx* then *easy_install pil* on the command line.
-- go to http://github.comhttp://github.com/ajmazurie/Utilities/zipball/master. A file named *ajmazurie-Utilities-xxxx.zip* will download (xxxx will be replaced by a commit signature code).
+- go to http://github.com/ajmazurie/Utilities/zipball/master. A file named *ajmazurie-Utilities-xxxx.zip* will download (xxxx will be replaced by a commit signature code).
 - unzip this file.
 - ensure the file *color-KEGG-pathways/color-KEGG-pathways* is in your `PATH <http://kb.iu.edu/data/acar.html>`_, either by moving it to a directory already in your PATH or adding this directory to the PATH.
 - **color-KEGG-pathways** should now be accessible from the command line; you can test it by typing *color-KEGG-pathways --version*

@@ -2,8 +2,8 @@
 
 __version_major__ = 1
 __version_minor__ = 0
-__revision__ = 5
-__build__ = "A4050FC"
+__revision__ = 7
+__build__ = "24A116F"
 
 import optparse
 import sys, os
