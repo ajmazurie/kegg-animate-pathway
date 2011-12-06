@@ -3,7 +3,7 @@ color-KEGG-pathways
 
 **color-KEGG-pathways** is a command-line utility which interfaces with the `KEGG <http://www.genome.jp/kegg/>`_ `API <http://www.genome.jp/kegg/soap/doc/keggapi_manual.html>`_ to produce color-coded figures of pathways. Any enzyme, metabolite or sub-pathway normally visible in a KEGG pathway can be painted with arbitrary color to represent quantitative or qualitative information such as expression level, presence or absence, etc. Here is an example:
 
-.. figure:: example.png
+.. figure:: doc/example.png
 	:align: center
 	:alt: Example of color-coded pathway
 
@@ -37,7 +37,7 @@ More than one pathway can be referred to in the same input file; **color-KEGG-pa
 Latest version
 --------------
 
-The current version is VERSION
+The current version is 1.0rev3
 
 Installation
 ------------
@@ -128,7 +128,7 @@ Command-line syntax::
 
 Resulting picture:
 
-.. image:: example_1.png
+.. image:: doc/example_1.png
 	:align: center
 
 Example 2
@@ -144,7 +144,7 @@ Hence, to create a new version of the figure above with only missing genes being
 
 Resulting picture:
 
-.. image:: example_2.png
+.. image:: doc/example_2.png
 	:align: center
 
 In this case no missing gene can be found. Note that white rectangles are a way for KEGG to show that the genes corresponding to a given enzyme are not found in this particular species.
@@ -196,7 +196,7 @@ Command-line syntax::
 
 Resulting picture:
 
-.. image:: example_3.png
+.. image:: doc/example_3.png
 	:align: center
 
 In this example the gene with the minimum measure received the color set by *--start-color*, while the gene with the maximum measure received the color set by *--end-color*. All the genes in between received a color interpolated between these two colors.
@@ -222,7 +222,7 @@ Command-line syntax::
 
 Resulting picture:
 
-.. image:: example_4.png
+.. image:: doc/example_4.png
 	:align: center
 
 Note about colors

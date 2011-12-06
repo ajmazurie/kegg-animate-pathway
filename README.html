@@ -319,7 +319,7 @@ ul.auto-toc {
 
 <p><strong>color-KEGG-pathways</strong> is a command-line utility which interfaces with the <a class="reference external" href="http://www.genome.jp/kegg/">KEGG</a> <a class="reference external" href="http://www.genome.jp/kegg/soap/doc/keggapi_manual.html">API</a> to produce color-coded figures of pathways. Any enzyme, metabolite or sub-pathway normally visible in a KEGG pathway can be painted with arbitrary color to represent quantitative or qualitative information such as expression level, presence or absence, etc. Here is an example:</p>
 <div class="figure align-center">
-<img alt="Example of color-coded pathway" src="example.png" />
+<img alt="Example of color-coded pathway" src="doc/example.png" />
 <p class="caption">Example of color-coded pathway.</p>
 <div class="legend">
 Enzymes in the glycolysis pathway have been colored according to experimentally measured gene expression levels. The color of each enzyme is calculated using a 3-point gradient of yellow (for the most up-regulated gene) to black (no expression) to blue (most down-regulated gene). White color is used to represent enzymes that are not encoded by any gene in this species.</div>
@@ -347,7 +347,7 @@ afm00010,afm:AFUA_3G11900,0.207820625
 <p>More than one pathway can be referred to in the same input file; <strong>color-KEGG-pathways</strong> will process each pathway and generate individual pictures.</p>
 <div class="section" id="latest-version">
 <h1>Latest version</h1>
-<p>The current version of <strong>color-KEGG-pathways</strong> is VERSION.</p>
+<p>The current version is VERSION</p>
 </div>
 <div class="section" id="installation">
 <h1>Installation</h1>
@@ -434,7 +434,7 @@ sce00020,cpd:C16254,ff0000
 color-KEGG-pathways -i example_1.csv
 </pre>
 <p>Resulting picture:</p>
-<img alt="example_1.png" class="align-center" src="example_1.png" />
+<img alt="doc/example_1.png" class="align-center" src="doc/example_1.png" />
 </div>
 <div class="section" id="example-2">
 <h2>Example 2</h2>
@@ -445,7 +445,7 @@ color-KEGG-pathways -i example_1.csv
 color-KEGG-pathways -i example_1.csv --only-show-missing genes
 </pre>
 <p>Resulting picture:</p>
-<img alt="example_2.png" class="align-center" src="example_2.png" />
+<img alt="doc/example_2.png" class="align-center" src="doc/example_2.png" />
 <p>In this case no missing gene can be found. Note that white rectangles are a way for KEGG to show that the genes corresponding to a given enzyme are not found in this particular species.</p>
 </div>
 <div class="section" id="example-3">
@@ -492,7 +492,7 @@ sce00020,sce:YNL071W,0.790556669728
 color-KEGG-pathways -i example_3.csv --two-color-scale min max --only-show-missing genes
 </pre>
 <p>Resulting picture:</p>
-<img alt="example_3.png" class="align-center" src="example_3.png" />
+<img alt="doc/example_3.png" class="align-center" src="doc/example_3.png" />
 <p>In this example the gene with the minimum measure received the color set by <em>--start-color</em>, while the gene with the maximum measure received the color set by <em>--end-color</em>. All the genes in between received a color interpolated between these two colors.</p>
 <p>Note that the picture now has a legend on the left, showing the gradient between the start and stop color and the associated measures. You can remove this legend by using the <em>--no-legend</em> option.</p>
 </div>
@@ -510,7 +510,7 @@ Dummy
 color-KEGG-pathways -i example_4.csv --three-color-scale min 0 max --only-show-missing genes
 </pre>
 <p>Resulting picture:</p>
-<img alt="example_4.png" class="align-center" src="example_4.png" />
+<img alt="doc/example_4.png" class="align-center" src="doc/example_4.png" />
 </div>
 </div>
 <div class="section" id="note-about-colors">
