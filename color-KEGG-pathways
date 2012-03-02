@@ -2,8 +2,8 @@
 
 __version_major__ = 1
 __version_minor__ = 0
-__revision__ = 7
-__build__ = "24A116F"
+__revision__ = 8
+__build__ = "9E3E06D"
 
 import optparse
 import sys, os
@@ -209,7 +209,7 @@ def rgb_to_html (rgb):
 
 # calculate the color with the highest contrast with 'rgb'
 def contrast (rgb):
-	if (rgb.hsb().color["b"] <= 0.7):
+	if (rgb.hsb().color["b"] <= 0.5):
 		return pyx.color.rgb(0.99, 0.99, 0.99) # not quite white, as its support appears buggy with KEGG api
 	else:
 		return pyx.color.rgb.black
@@ -404,9 +404,11 @@ try:
 		object_list, object2elements, element2objects, element2type = {}, {}, {}, {}
 
 		for entry in connection.get_elements_by_pathway("path:" + pathway_id):
-			element_id = int(entry["element_id"])
+			assert (len(entry["element_id"]) == 1) ###
+			element_id = int(entry["element_id"][0])
 
-			for object_id in entry["names"]:
+			assert (len(entry["names"]) == 1) ###
+			for object_id in entry["names"][0]:
 				# storing a hash of this object name together with its real name
 				object_id_ = object_id.lower()
 				object_list[object_id_] = object_id
@@ -586,5 +588,5 @@ try:
 			print "  done (saved as %s)" % fn
 		"""
 
-except Exception as msg:
+except IOError as msg:
 	error(str(msg))

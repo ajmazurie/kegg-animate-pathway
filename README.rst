@@ -37,7 +37,7 @@ More than one pathway can be referred to in the same input file; **color-KEGG-pa
 Latest version
 --------------
 
-The current version is 1.0rev7
+The current version is 1.0rev8
 
 Installation
 ------------
