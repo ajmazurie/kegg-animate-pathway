@@ -34,10 +34,12 @@ For example, the .csv file used to obtain the figure above was::
 
 More than one pathway can be referred to in the same input file; **color-KEGG-pathways** will process each pathway and generate individual pictures.
 
+An example of use of **color-KEGG-pathways** in a scientific publication can be seen at http://www.ncbi.nlm.nih.gov/pubmed/22309491
+
 Latest version
 --------------
 
-The current version is 1.0rev8
+The current version is 1.0rev9
 
 Installation
 ------------

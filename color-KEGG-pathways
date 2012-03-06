@@ -2,8 +2,8 @@
 
 __version_major__ = 1
 __version_minor__ = 0
-__revision__ = 8
-__build__ = "9E3E06D"
+__revision__ = 9
+__build__ = "5B97FF0"
 
 import optparse
 import sys, os
