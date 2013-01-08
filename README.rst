@@ -1,3 +1,6 @@
+**IMPORTANT NOTE** This tools relies on the SOAP-based KEGG API that has been discontinued in December 2012. As such, this tools won't work. As soon as I will have time to do so I'll update it to make use of the new, REST-based API. In the meanwhile, you may want to try the KEGG Mapper tool (http://www.genome.jp/kegg/tool/map_pathway2.html)
+
+
 color-KEGG-pathways
 ===================
 
