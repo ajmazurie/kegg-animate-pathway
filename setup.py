@@ -28,7 +28,7 @@ setuptools.setup(
             # release candidate
             "RELEASE_CANDIDATE": "rc",
             # final release
-            None: '',
+            None: '.',
         }[_SETUP.get("project_status")],
         _VERSION["changeset_local_revision"]),
 
