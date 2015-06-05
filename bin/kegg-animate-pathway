@@ -1,0 +1,569 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+from __future__ import division
+
+import sys, os
+import argparse
+import contextlib
+import csv
+import logging
+import random
+import StringIO
+import xml.etree.ElementTree as xml
+
+parser = argparse.ArgumentParser()
+
+input_parser = parser.add_argument_group("input options")
+
+input_parser.add_argument("-p", "--pathway-id", required = True,
+    dest = "pathway_id", metavar = "KEGG IDENTIFIER",
+    help = "(mandatory) KEGG identifier for a pathway")
+
+input_parser.add_argument("-l", "--levels", required = True,
+    dest = "levels_fns", metavar = "FILENAME", action = "append",
+    help = """(mandatory) CSV-formatted file with activity levels; this option
+    can be used more than once, one per file""")
+
+process_parser = parser.add_argument_group("processing options")
+
+process_parser.add_argument("--aggregate",
+    dest = "aggregation_function",
+    choices = ("mean", "median", "lowest", "highest", "random"),
+    default = "median",
+    help = """(optional) Function used to aggregate activity levels when more
+    than one entity share the same graphic element. Default: %(default)s""")
+
+output_parser = parser.add_argument_group("output options")
+
+output_parser.add_argument("-o", "--output", required = True,
+    dest = "output_fn", metavar = "FILENAME",
+    help = "(mandatory) Name for the output movie file")
+
+output_parser.add_argument("--duration",
+    dest = "output_duration", metavar = "SECONDS", type = int,
+    help = """(optional) Duration of the output movie, in seconds. Default: one
+    seconds per time point""")
+
+output_parser.add_argument("--fps",
+    dest = "output_fps", metavar = "INTEGER", type = int, default = 25,
+    help = "(optional) Frame rate of the output movie. Default: %(default)d")
+
+output_parser.add_argument("--start-color",
+    dest = "start_color", metavar = "INTEGER",
+    type = int, nargs = 3, default = (0, 0, 0),
+    help = """(optional) Starting color, as a R/G/B triple of 8-bits integers.
+    Default: %(default)s""")
+
+output_parser.add_argument("--mid-color",
+    dest = "mid_color", metavar = "INTEGER",
+    type = int, nargs = 3,
+    help = """(optional) Middle color, as a R/G/B triple of 8-bits integers.
+    Default: midpoint between --start-color and --end-color""")
+
+output_parser.add_argument("--end-color",
+    dest = "end_color", metavar = "INTEGER",
+    type = int, nargs = 3, default = (255, 255, 255),
+    help = """(optional) Ending color, as a R/G/B triple of 8-bits integers.
+    Default: %(default)s""")
+
+output_parser.add_argument("--blur-radius",
+    dest = "blur_radius", metavar = "INTEGER", type = int, default = 0,
+    help = """(optional) Blur radius for the graphic overlays. Default:
+    %(default)d""")
+
+output_parser.add_argument("--transparency",
+    dest = "transparency_level", metavar = "INTEGER", type = int, default = 50,
+    help = """(optional) Transparency of the graphic overlays, from 0
+    (opaque) to 255 (invisible). Default: %(default)d""")
+
+output_parser.add_argument("--scale",
+    dest = "scaling_factor", metavar = "FLOAT", type = float, default = 1.0,
+    help = """(optional) Scaling of the graphic overlays.
+    Default: %(default).2g""")
+
+parser.add_argument("-v", "--verbose",
+    dest = "verbose", action = "store_true", default = False,
+    help = "(optional) if set, will display debug information")
+
+options = parser.parse_args()
+
+logger = logging.getLogger(os.path.basename(__file__))
+log_formatter = logging.Formatter(
+    "[%(asctime)s] %(name)s: %(levelname)s: %(message)s")
+
+console_log_handler = logging.StreamHandler()
+console_log_handler.setFormatter(log_formatter)
+
+logger.addHandler(console_log_handler)
+logger.propagate = False
+
+def error (msg):
+    logger.error(msg)
+    sys.exit(1)
+
+if (options.verbose):
+    logger.setLevel(logging.DEBUG)
+else:
+    logger.setLevel(logging.INFO)
+
+for fn in options.levels_fns:
+    if (not os.path.exists(fn)):
+        error("file '%s' not found" % fn)
+
+if (not options.output_fn.lower().endswith(".gif")):
+    error("invalid extension for output file")
+
+if (options.output_duration is not None) and (options.output_duration < 1):
+    error("invalid value for --duration: %d" % options.output_duration)
+
+if (options.output_fps < 1):
+    error("invalid value for --fps: %d" % options.output_fps)
+
+def check_rgb_color (option_name, channels):
+    for channel in channels:
+        if (channel < 0) or (channel > 255):
+            error("invalid channel value for %s: %d" % (option_name, channel))
+
+check_rgb_color("--start-color", options.start_color)
+logger.debug("start_color = %d %d %d" % tuple(options.start_color))
+
+check_rgb_color("--end-color", options.end_color)
+logger.debug("end_color = %d %d %d" % tuple(options.end_color))
+
+if (options.mid_color is None):
+    options.mid_color = (
+        int((options.start_color[0] + options.end_color[0]) / 2),
+        int((options.start_color[1] + options.end_color[1]) / 2),
+        int((options.start_color[2] + options.end_color[2]) / 2))
+else:
+    check_rgb_color("--mid-color", options.mid_color)
+
+logger.debug("mid_color = %d %d %d" % options.mid_color)
+
+if (options.blur_radius < 0):
+    error("invalid value for --blur-radius: %d" % options.blur_radius)
+
+if (options.transparency_level < 0) or (options.transparency_level > 255):
+    error("invalid value for --transparency: %d" % options.transparency_level)
+
+if (options.scaling_factor < 1):
+    error("invalid value for --scale: %s" % options.scaling_factor)
+
+try:
+    import imageio
+    import numpy
+    import requests
+    import PIL.Image
+    import PIL.ImageDraw
+    import PIL.ImageFilter
+    import PIL.ImageOps
+
+except ImportError as e:
+    error("library '%s' not found" % str(e).split()[-1])
+
+#:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+@contextlib.contextmanager
+def step (name, is_debug = False):
+    emit = logger.debug if (is_debug) else logger.info
+    emit("%s: started" % name)
+
+    try:
+        yield
+    except IOError:
+        error("%s: exited with error" % name)
+
+    emit("%s: done" % name)
+
+with step("retrieving information about pathway %s" % options.pathway_id):
+    with step("retrieving KGML", True):
+        kgml_d = requests.get(
+            "http://rest.kegg.jp/get/%s/kgml" % options.pathway_id)
+        logger.debug("retrieving KGML from " + kgml_d.url)
+
+    with step("parsing KGML", True):
+        kgml_d = xml.parse(StringIO.StringIO(kgml_d.content)).getroot()
+        organism_id = kgml_d.get("org").upper()
+        pathway_id = kgml_d.get("number")
+        pathway_title = kgml_d.get("title")
+
+    with step("retrieving image", True):
+        image_d = requests.get(kgml_d.get("image"))
+        logger.debug("retrieving PNG from " + image_d.url)
+
+        pathway_image = PIL.Image.open(StringIO.StringIO(image_d.content))
+        logger.debug("format: %s, dimensions: %s, mode: %s" % (
+            pathway_image.format, pathway_image.size, pathway_image.mode))
+
+        if (pathway_image.mode != "RGB"):  # we do not want an alpha channel
+            pathway_image = pathway_image.convert(mode = "RGB")
+
+print("* processing pathway \"%s\" (organism '%s', pathway #%s)" % (
+    pathway_title, organism_id, pathway_id))
+
+def list_graphic_elements (kgml_d):
+    for entry_node in kgml_d.findall("entry"):
+        entity_ids = tuple(entry_node.get("name").upper().split())
+        entity_type = entry_node.get("type")
+
+        graphic_element_node = entry_node.find("graphics")
+        graphic_element_type = graphic_element_node.get("type")
+
+        # extract the shape and coordinates of the graphic element
+        if (graphic_element_type in ("rectangle", "circle")):
+            w = int(graphic_element_node.get("width"))
+            h = int(graphic_element_node.get("height"))
+            x0 = int(graphic_element_node.get("x")) - w / 2
+            y0 = int(graphic_element_node.get("y")) - h / 2
+            x1, y1 = x0 + w, y0 + h
+
+            graphic_element = (graphic_element_type, x0, y0, x1, y1)
+
+        else:
+            logger.debug("ignoring graphic element '%s'" % graphic_element_type)
+            continue
+
+        # extract and return the entity identifiers
+        if (entity_type == "gene"):
+            for entity_id in entity_ids:
+                assert (entity_id.startswith(organism_id))
+                entity_id = entity_id[len(organism_id) + 1:]
+
+                yield (entity_id, entity_type, graphic_element)
+
+        elif (entity_type == "compound"):
+            for entity_id in entity_ids:
+                assert (entity_id.startswith("CPD:"))
+                entity_id = entity_id[4:]
+
+                yield (entity_id, entity_type, graphic_element)
+
+        else:
+            logger.debug("ignoring entity '%s'" % entity_type)
+            continue
+
+entities, graphic_elements = {}, {}
+
+with step("listing graphic elements"):
+    count_per_entity_type = {}
+
+    for (entity_id, entity_type, graphic_element) in list_graphic_elements(kgml_d):
+        entities\
+            .setdefault((entity_id, entity_type), [])\
+            .append(graphic_element)
+
+        graphic_elements\
+            .setdefault(graphic_element, [])\
+            .append((entity_id, entity_type))
+
+        if (not entity_type in count_per_entity_type):
+            count_per_entity_type[entity_type] = 0
+
+        count_per_entity_type[entity_type] += 1
+
+        logger.debug("found %s (%s): %s" % (
+            entity_id, entity_type, graphic_element))
+
+print("  %d graphic elements" % len(graphic_elements))
+print("  %d entities (%s)" % (
+    len(entities),
+    ", ".join(["%d %ss" % (count, entity_type) for entity_type, count in sorted(count_per_entity_type.items())])))
+
+#:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+print("* processing activity levels")
+
+def list_activity_levels (fn):
+    if (fn.lower().endswith(".gz")):
+        fh = gzip.open(fn, "rb")
+    else:
+        fh = open(fn, "rU")
+
+    for entry in csv.reader(fh):
+        if (len(entry) == 0):
+            continue
+
+        entry_id = entry[0].strip().upper()
+        if (entry_id == ''):
+            continue
+
+        entry_levels = []
+        for level in entry[1:]:
+            try:
+                entry_levels.append(float(level))
+            except:
+                error("invalid level for '%s': '%s'" % (entry_id, level))
+
+        yield (entry_id, entry_levels)
+
+def parse_entity_name (entity_name):
+    entity_name_ = entity_name.upper()
+
+    if (entity_name_.startswith(organism_id + ':')):
+        return (entity_name_[:len(organism_id)], organism_id)
+
+    if (entity_name_.startswith("cpd:")):
+        return (entity_name_[4:], "cpd")
+
+    return (entity_name_, None)
+
+timepoints, levels = None, {}
+
+for fn in options.levels_fns:
+    levels_ = {}
+
+    with step("loading levels from '%s'" % fn):
+        ignored_entities = {}
+        min_level, max_level = sys.maxint, -sys.maxint
+
+        for entity_name, entity_levels in list_activity_levels(fn):
+            entity_id, entity_type = parse_entity_name(entity_name)
+
+            # case where no prefix was provided for the entity identifier
+            if (entity_type is None):
+                candidates = []
+                for (entity_id_, entity_type_) in entities:
+                    if (entity_id == entity_id_):
+                        candidates.append(entity_type_)
+
+                if (len(candidates) > 1):
+                    error("ambiguous entity identifier '%s'" % entity_id)
+
+                if (len(candidates) == 0):
+                    ignored_entities[(entity_id, "?")] = True
+                    continue
+
+                entity_type = candidates[0]
+
+            # case where a prefix was provided
+            elif (not (entity_id, entity_type) in entities):
+                ignored_entities[(entity_id, entity_type)] = True
+                continue
+
+            if ((entity_id, entity_type) in levels):
+                error("duplicate information for %s '%s'" % (
+                    entity_type, entity_id))
+
+            if (timepoints is None):
+                timepoints = range(len(entity_levels))
+
+            elif (len(timepoints) != len(entity_levels)):
+                error("inconsistent timepoints for %s '%s'" % (
+                    entity_type, entity_id))
+
+            levels_[(entity_id, entity_type)] = entity_levels
+            min_level = min(min_level, min(entity_levels))
+            max_level = max(max_level, max(entity_levels))
+
+        logger.info("%d entit%s with level data" % (
+            len(levels_),
+            {True: "ies", False: "y"}[len(levels_) > 1]))
+
+        if (min_level == max_level):
+            error("no variation found in activity levels")
+
+        logger.info("activity level range: %s to %s" % (min_level, max_level))
+        normalize = lambda x: (x - min_level) / (max_level - min_level)
+
+        for entity_key, entity_levels in levels_.iteritems():
+            levels[entity_key] = map(normalize, entity_levels)
+
+        if (len(ignored_entities) > 0):
+            entity_str = lambda entity_key: "%s (%s)" % entity_key
+            logger.info("%d identifier%s ignored: %s" % (
+                len(ignored_entities),
+                {True: 's', False: ''}[len(ignored_entities) > 1],
+                ', '.join(sorted(map(entity_str, ignored_entities)))))
+
+if (len(levels) == 0):
+    error("no activity level found")
+
+del entities
+
+print("  %d entities, %d timepoints (%s)" % (len(levels), len(timepoints),
+    ', '.join(map(str, timepoints))))
+
+#:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+def linear_rgb_interpolation (start_rgb, mid_rgb, end_rgb, position):
+    rgb = [None, None, None]
+    for i in range(3):
+        if (position <= 0.5):
+            lower_rgb, higher_rgb = start_rgb[i], mid_rgb[i]
+            position_ = position * 2
+        else:
+            lower_rgb, higher_rgb = mid_rgb[i], end_rgb[i]
+            position_ = (position - 0.5) * 2
+
+        rgb[i] = int(lower_rgb + (higher_rgb - lower_rgb) * position_)
+
+    return tuple(rgb)
+
+def sigmoidal_rgb_interpolation (start_rgb, end_rgb, position):
+    rgb = [None, None, None]
+    for i in range(3):
+        s = 1 / (1 + numpy.exp((0.5 - position) * 10))
+        rgb[i] = int(start_rgb[i] + (end_rgb[i] - start_rgb[i]) * s)
+
+    return tuple(rgb)
+
+aggregate = {
+    "mean":    lambda values: numpy.mean(values),
+    "median":  lambda values: numpy.median(values),
+    "lowest":  lambda values: min(values),
+    "highest": lambda values: max(values),
+    "random":  lambda values: random.choice(values),
+}[options.aggregation_function]
+
+colors = {}
+for graphic_element, linked_entities in graphic_elements.iteritems():
+    # for each timepoint,
+    for timepoint_n in range(len(timepoints)):
+        # collect the activity level(s) of the linked entities
+        activity_levels = []
+        for entity_key in linked_entities:
+            if (not entity_key in levels):
+                continue
+            activity_levels.append(levels[entity_key][timepoint_n])
+
+        # ignore this time point if no activity level is found
+        if (len(activity_levels) == 0):
+            continue
+
+        # aggregate the activity levels
+        activity_level = aggregate(activity_levels)
+
+        # calculate the color for this time point
+        timepoint_color = linear_rgb_interpolation(
+            options.start_color,
+            options.mid_color,
+            options.end_color,
+            activity_level)
+
+        colors.setdefault(graphic_element, []).append(timepoint_color)
+
+del activity_levels
+
+#:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+movie = imageio.save(options.output_fn, fps = options.output_fps)
+
+if (options.output_duration is None):
+    options.output_duration = len(timepoints)
+
+logger.debug("output_duration = %d" % options.output_duration)
+
+tick_length = 1 / options.output_fps
+logger.debug("tick_length = %.2g" % tick_length)
+
+# for each tick (i.e., frame),
+current_time, current_frame = 0., 0
+while (current_time <= options.output_duration):
+    pathway_image_frame = pathway_image.copy()
+
+    # identification of the time point closest to this tick
+    closest_timepoint_n, time_delta = None, sys.maxint
+    for timepoint_n, timepoint in enumerate(timepoints):
+        time_delta_ = timepoint - current_time
+        if (abs(time_delta_) < abs(time_delta)):
+            closest_timepoint_n = timepoint_n
+            time_delta = time_delta_
+
+    # calculation of the interpolated color for this tick
+    def calculate_color (graphic_element):
+        # special case: we are right on an existing time point
+        if (abs(time_delta) < 1e-3):
+            return colors[graphic_element][closest_timepoint_n]
+
+        elif (time_delta < 0):
+            start_timepoint_n = closest_timepoint_n
+            end_timepoint_n = closest_timepoint_n + 1
+            position = -time_delta
+        else:
+            start_timepoint_n = closest_timepoint_n - 1
+            end_timepoint_n = closest_timepoint_n
+            position = 1 - time_delta
+
+        start_timepoint_n = max(start_timepoint_n, 0)
+        end_timepoint_n = min(end_timepoint_n, len(timepoints) - 1)
+
+        if (start_timepoint_n == end_timepoint_n):
+            return colors[graphic_element][closest_timepoint_n]
+
+        start_rgb = colors[graphic_element][start_timepoint_n]
+        end_rgb = colors[graphic_element][end_timepoint_n]
+
+        position /= (
+            timepoints[end_timepoint_n] - timepoints[start_timepoint_n])
+
+        return sigmoidal_rgb_interpolation(start_rgb, end_rgb, position)
+
+    # painting of the graphic elements
+    for graphic_element, linked_entities in graphic_elements.iteritems():
+        if (not graphic_element in colors):
+            continue
+
+        (graphic_element_type, x0, y0, x1, y1) = graphic_element
+        padding = options.blur_radius * 2
+
+        # canvas for the graphic element: large rectangle with the
+        # final color and encompassing the actual graphic element
+        graphic_element_image = PIL.Image.new("RGBA",
+            (int((x1 - x0) * options.scaling_factor + padding * 2) + 1,
+             int((y1 - y0) * options.scaling_factor + padding * 2) + 1),
+            color = calculate_color(graphic_element))
+
+        graphic_element_canvas = PIL.ImageDraw.Draw(
+            graphic_element_image)
+
+        # mask for the graphic element: blurred
+        # version of the actual graphic element
+        graphic_element_mask = PIL.Image.new("L",
+            graphic_element_image.size, color = 255)
+
+        graphic_element_mask_canvas = PIL.ImageDraw.Draw(
+            graphic_element_mask)
+
+        graphic_element_bbox = (
+            padding, padding,
+            (x1 - x0) * options.scaling_factor + padding,
+            (y1 - y0) * options.scaling_factor + padding)
+
+        if (graphic_element_type == "rectangle"):
+            graphic_element_mask_canvas.rectangle(
+                graphic_element_bbox,
+                outline = 0, fill = 0)
+
+        elif (graphic_element_type == "circle"):
+            graphic_element_mask_canvas.ellipse(
+                graphic_element_bbox,
+                outline = 0, fill = 0)
+
+        graphic_element_mask = graphic_element_mask\
+            .filter(PIL.ImageFilter.GaussianBlur(radius = options.blur_radius))
+
+        graphic_element_mask = graphic_element_mask.point(
+            lambda v: (255 - v) * (1 - options.transparency_level / 255))
+
+        # the mask is used to set the alpha
+        # channel of the graphic element...
+        graphic_element_image.putalpha(graphic_element_mask)
+
+        # ...and the result is pasted onto the frame
+        pathway_image_frame.paste(
+            graphic_element_image,
+            (int(x0 - padding - 0.5 * (x1 - x0) * (options.scaling_factor - 1)),
+             int(y0 - padding - 0.5 * (y1 - y0) * (options.scaling_factor - 1))),
+            graphic_element_image)
+
+        # code for rounded rectangles: http://web.archive.org/web/20130306020911/http://nadiana.com/pil-tutorial-basic-advanced-drawing#Drawing_Rounded_Corners_Rectangle
+
+    movie.append_data(numpy.array(pathway_image_frame))
+    #pathway_image_frame.save(
+    #    "%s_frame_%04d.png" % (options.output_fn[:-4], current_frame))
+
+    current_time += tick_length
+    current_frame += 1
+
+logger.info("all done.")
