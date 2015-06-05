@@ -4,11 +4,11 @@ kegg-animate-pathway
 **kegg-animate-pathway** is a [Python](http:www.python.org)-based command-line utility which interfaces with the [KEGG](http://www.genome.jp/kegg/>) API to produce animated figures of metabolic pathways to reveal activities of its genes and/or compounds.
 
 Here is an example:
-![example of animated pathway](http://github.com/ajmazurie/kegg-animate-pathway/raw/master/doc/pathway.gif)
+![example of animated pathway](https://raw.githubusercontent.com/ajmazurie/kegg-animate-pathway/master/doc/pathway.gif)
 
 The color, size, and bluring of the overlays can be modified at will. For example, here is the same pathway but with the overlays blurred and scaled up:
 
-![example of animated pathway](http://github.com/ajmazurie/kegg-animate-pathway/raw/master/doc/pathway+blur+scaling.gif)
+![example of animated pathway](https://raw.githubusercontent.com/ajmazurie/kegg-animate-pathway/master/doc/pathway+blur+scaling.gif)
 
 Installation
 ------------
