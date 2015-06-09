@@ -21,7 +21,7 @@ input_parser.add_argument("-p", "--pathway-id", required = True,
     help = "(mandatory) KEGG identifier for a pathway")
 
 input_parser.add_argument("-l", "--levels", required = True,
-    dest = "levels_fns", metavar = "FILENAME", action = "append",
+    dest = "datasets", metavar = "FILENAME", action = "append",
     help = """(mandatory) CSV-formatted file with activity levels; this option
     can be used more than once, one per file""")
 
@@ -33,6 +33,11 @@ process_parser.add_argument("--aggregate",
     default = "median",
     help = """(optional) Function used to aggregate activity levels when more
     than one entity share the same graphic element. Default: %(default)s""")
+
+process_parser.add_argument("--mid-value",
+    dest = "mid_value", metavar = "VALUE", type = float,
+    help = """(optional) If set, the color palette used for the overlays will
+    use this mid value for the mid color (see --mid-color)""")
 
 output_parser = parser.add_argument_group("output options")
 
@@ -49,6 +54,19 @@ output_parser.add_argument("--fps",
     dest = "output_fps", metavar = "INTEGER", type = int, default = 25,
     help = "(optional) Frame rate of the output movie. Default: %(default)d")
 
+output_parser.add_argument("--with-labels",
+    dest = "show_labels", action = "store_true", default = False,
+    help = "(optional) If set, will show gene and compound names on the figure")
+
+output_parser.add_argument("--label-font",
+    dest = "label_font", metavar = "FONTNAME",
+    help = "(optional) Set a TrueType font to use for the labels")
+
+output_parser.add_argument("--label-size",
+    dest = "label_size", metavar = "INTEGER", type = int, default = 10,
+    help = """(optional) Set a font size to use for the labels; will be ignored
+    if not font is provided by --label-font. Default: %(default)d""")
+
 output_parser.add_argument("--start-color",
     dest = "start_color", metavar = "INTEGER",
     type = int, nargs = 3, default = (0, 0, 0),
@@ -58,7 +76,8 @@ output_parser.add_argument("--start-color",
 output_parser.add_argument("--mid-color",
     dest = "mid_color", metavar = "INTEGER",
     type = int, nargs = 3,
-    help = """(optional) Middle color, as a R/G/B triple of 8-bits integers.
+    help = """(optional) Middle color, as a R/G/B triple of 8-bits integers;
+    ignored if no middle value was defined (see --mid-value).
     Default: midpoint between --start-color and --end-color""")
 
 output_parser.add_argument("--end-color",
@@ -67,19 +86,19 @@ output_parser.add_argument("--end-color",
     help = """(optional) Ending color, as a R/G/B triple of 8-bits integers.
     Default: %(default)s""")
 
-output_parser.add_argument("--blur-radius",
+output_parser.add_argument("--blur",
     dest = "blur_radius", metavar = "INTEGER", type = int, default = 0,
     help = """(optional) Blur radius for the graphic overlays. Default:
     %(default)d""")
 
 output_parser.add_argument("--transparency",
     dest = "transparency_level", metavar = "INTEGER", type = int, default = 50,
-    help = """(optional) Transparency of the graphic overlays, from 0
+    help = """(optional) Transparency level of the graphic overlays, from 0
     (opaque) to 255 (invisible). Default: %(default)d""")
 
 output_parser.add_argument("--scale",
     dest = "scaling_factor", metavar = "FLOAT", type = float, default = 1.0,
-    help = """(optional) Scaling of the graphic overlays.
+    help = """(optional) Scaling factor of the graphic overlays.
     Default: %(default).2g""")
 
 parser.add_argument("-v", "--verbose",
@@ -107,10 +126,6 @@ if (options.verbose):
 else:
     logger.setLevel(logging.INFO)
 
-for fn in options.levels_fns:
-    if (not os.path.exists(fn)):
-        error("file '%s' not found" % fn)
-
 if (not options.output_fn.lower().endswith(".gif")):
     error("invalid extension for output file")
 
@@ -120,35 +135,88 @@ if (options.output_duration is not None) and (options.output_duration < 1):
 if (options.output_fps < 1):
     error("invalid value for --fps: %d" % options.output_fps)
 
-def check_rgb_color (option_name, channels):
-    for channel in channels:
-        if (channel < 0) or (channel > 255):
-            error("invalid channel value for %s: %d" % (option_name, channel))
+datasets = []
+for dataset in options.datasets:
+    dataset_options = {
+        "filename": None,
+        "start-color": options.start_color,
+        "end-color": options.end_color,
+        "mid-color": options.mid_color,
+        "mid-value": options.mid_value,
+        "blur": options.blur_radius,
+        "scale": options.scaling_factor,
+        "transparency": options.transparency_level,
+    }
 
-check_rgb_color("--start-color", options.start_color)
-logger.debug("start_color = %d %d %d" % tuple(options.start_color))
+    if ('|' in dataset):
+        for item in dataset.split('|'):
+            if (not ':' in item):
+                error("invalid syntax: missing ':' in " + item)
 
-check_rgb_color("--end-color", options.end_color)
-logger.debug("end_color = %d %d %d" % tuple(options.end_color))
+            key, value = item.lower().split(':', 1)
+            if (not key in dataset_options):
+                error("unknown parameter '%s'" % key)
 
-if (options.mid_color is None):
-    options.mid_color = (
-        int((options.start_color[0] + options.end_color[0]) / 2),
-        int((options.start_color[1] + options.end_color[1]) / 2),
-        int((options.start_color[2] + options.end_color[2]) / 2))
-else:
-    check_rgb_color("--mid-color", options.mid_color)
+            try:
+                if (key == "filename"):
+                    pass
 
-logger.debug("mid_color = %d %d %d" % options.mid_color)
+                elif (key in ("start-color", "end-color", "mid-color")):
+                    try:
+                        value = map(int, value.split(','))
+                        assert len(value) == 3
+                    except:
+                        raise Exception("invalid color: %s" % value)
 
-if (options.blur_radius < 0):
-    error("invalid value for --blur-radius: %d" % options.blur_radius)
+                elif (key in ("mid-value", "scale")):
+                    value = float(value)
+                else:
+                    value = int(value)
 
-if (options.transparency_level < 0) or (options.transparency_level > 255):
-    error("invalid value for --transparency: %d" % options.transparency_level)
+            except Exception as e:
+                error("invalid value for parameter %s: %s" % (
+                    key.replace('_', '-'), e))
 
-if (options.scaling_factor < 1):
-    error("invalid value for --scale: %s" % options.scaling_factor)
+            dataset_options[key] = value
+    else:
+        dataset_options["filename"] = dataset
+
+    if (dataset_options["filename"] is None):
+        error("missing key 'filename' in " + dataset)
+
+    if (not os.path.exists(dataset_options["filename"])):
+        error("file '%s' not found" % dataset_options["filename"])
+
+    for key in ("start-color", "end-color"):
+        for channel in dataset_options[key]:
+            if (channel < 0) or (channel > 255):
+                error("invalid color channel: %d" % channel)
+
+    if (dataset_options["mid-color"] is None):
+        start_color = dataset_options["start-color"]
+        end_color = dataset_options["end-color"]
+        dataset_options["mid-color"] = (
+            int((start_color[0] + end_color[0]) / 2),
+            int((start_color[1] + end_color[1]) / 2),
+            int((start_color[2] + end_color[2]) / 2))
+    else:
+        for channel in dataset_options["mid-color"]:
+            if (channel < 0) or (channel > 255):
+                error("invalid color channel: %d" % channel)
+
+    if (dataset_options["blur"] < 0):
+        error("invalid value for blur radius: %d" % \
+            dataset_options["blur"])
+
+    if (not 0 <= dataset_options["transparency"] <= 255):
+        error("invalid value for transparency level: %d" % \
+            dataset_options["transparency"])
+
+    if (dataset_options["scale"] < 1):
+        error("invalid value for scale factor: %s" % \
+            dataset_options["scale"])
+
+    datasets.append(dataset_options)
 
 try:
     import imageio
@@ -157,10 +225,22 @@ try:
     import PIL.Image
     import PIL.ImageDraw
     import PIL.ImageFilter
-    import PIL.ImageOps
+    import PIL.ImageFont
 
 except ImportError as e:
     error("library '%s' not found" % str(e).split()[-1])
+
+if (options.label_font is None):
+    label_font = PIL.ImageFont.load_default()
+elif (options.label_size < 0):
+    error("invalid value for font size: %d" % options.label_size)
+else:
+    try:
+        label_font = PIL.ImageFont.truetype(
+            font = options.label_font,
+            size = options.label_size)
+    except:
+        error("font '%s' not found" % options.label_font)
 
 #:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
@@ -196,11 +276,11 @@ with step("retrieving information about pathway %s" % options.pathway_id):
         logger.debug("format: %s, dimensions: %s, mode: %s" % (
             pathway_image.format, pathway_image.size, pathway_image.mode))
 
-        if (pathway_image.mode != "RGB"):  # we do not want an alpha channel
-            pathway_image = pathway_image.convert(mode = "RGB")
+        if (pathway_image.mode != "RGBA"):
+            pathway_image = pathway_image.convert(mode = "RGBA")
 
-print("* processing pathway \"%s\" (organism '%s', pathway #%s)" % (
-    pathway_title, organism_id, pathway_id))
+    logger.info("found pathway \"%s\" (organism '%s', pathway #%s)" % (
+        pathway_title, organism_id, pathway_id))
 
 def list_graphic_elements (kgml_d):
     for entry_node in kgml_d.findall("entry"):
@@ -265,14 +345,13 @@ with step("listing graphic elements"):
         logger.debug("found %s (%s): %s" % (
             entity_id, entity_type, graphic_element))
 
-print("  %d graphic elements" % len(graphic_elements))
-print("  %d entities (%s)" % (
-    len(entities),
-    ", ".join(["%d %ss" % (count, entity_type) for entity_type, count in sorted(count_per_entity_type.items())])))
+    logger.info("found %d graphic elements" % len(graphic_elements))
+
+    logger.info("found %d entities (%s)" % (
+        len(entities),
+        ", ".join(["%d %ss" % (count, entity_type) for entity_type, count in sorted(count_per_entity_type.items())])))
 
 #:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-print("* processing activity levels")
 
 def list_activity_levels (fn):
     if (fn.lower().endswith(".gz")):
@@ -300,17 +379,18 @@ def list_activity_levels (fn):
 def parse_entity_name (entity_name):
     entity_name_ = entity_name.upper()
 
-    if (entity_name_.startswith(organism_id + ':')):
-        return (entity_name_[:len(organism_id)], organism_id)
+    if (entity_name_.startswith(organism_id.upper() + ':')):
+        return (entity_name_[len(organism_id)+1:], "gene")
 
-    if (entity_name_.startswith("cpd:")):
-        return (entity_name_[4:], "cpd")
+    if (entity_name_.startswith("CPD:")):
+        return (entity_name_[4:], "compound")
 
     return (entity_name_, None)
 
 timepoints, levels = None, {}
 
-for fn in options.levels_fns:
+for dataset_options in datasets:
+    fn = dataset_options.pop("filename")
     levels_ = {}
 
     with step("loading levels from '%s'" % fn):
@@ -356,54 +436,80 @@ for fn in options.levels_fns:
             min_level = min(min_level, min(entity_levels))
             max_level = max(max_level, max(entity_levels))
 
-        logger.info("%d entit%s with level data" % (
+        logger.info("%d entit%s with level data (out of %d)" % (
             len(levels_),
-            {True: "ies", False: "y"}[len(levels_) > 1]))
+            {True: "ies", False: "y"}[len(levels_) > 1],
+            len(levels_) + len(ignored_entities)))
 
         if (min_level == max_level):
             error("no variation found in activity levels")
 
+        mid_value = dataset_options.pop("mid-value")
+
+        # if a mid value has been defined, ensure that
+        # max_level and min_level are equidistant from it
+        if (mid_value is not None):
+            over_mid_value = max(max_level - mid_value, 0)
+            below_mid_value = max(mid_value - min_level, 0)
+
+            if (over_mid_value > below_mid_value):
+                min_level = mid_value - over_mid_value
+
+            elif (below_mid_value > over_mid_value):
+                max_level = mid_value + below_mid_value
+
         logger.info("activity level range: %s to %s" % (min_level, max_level))
+
         normalize = lambda x: (x - min_level) / (max_level - min_level)
 
+        if (mid_value is not None):
+            mid_value = normalize(mid_value)
+
         for entity_key, entity_levels in levels_.iteritems():
-            levels[entity_key] = map(normalize, entity_levels)
+            levels[entity_key] = (
+                dataset_options,
+                map(normalize, entity_levels),
+                mid_value)
 
         if (len(ignored_entities) > 0):
-            entity_str = lambda entity_key: "%s (%s)" % entity_key
-            logger.info("%d identifier%s ignored: %s" % (
+            entity_str = lambda entity_key: "%s (%s)" % entity_key \
+                if (entity_key[1] is not None) else entity_key[0]
+            ignored_entities = map(entity_str, ignored_entities)
+
+            if (len(ignored_entities) > 6):
+                entities_list = "%s, ... %s" % (
+                    ', '.join(ignored_entities[:3]),
+                    ', '.join(ignored_entities[-3:]))
+            else:
+                entities_list = ', '.join(ignored_entities)
+
+            logger.info("%d entit%s ignored: %s" % (
                 len(ignored_entities),
-                {True: 's', False: ''}[len(ignored_entities) > 1],
-                ', '.join(sorted(map(entity_str, ignored_entities)))))
+                {True: "ies", False: "y"}[len(ignored_entities) > 1],
+                entities_list))
+
+    logger.info("found %d entities, %d timepoints (%s)" % (
+        len(levels), len(timepoints),
+        ', '.join(map(str, timepoints))))
 
 if (len(levels) == 0):
     error("no activity level found")
 
 del entities
 
-print("  %d entities, %d timepoints (%s)" % (len(levels), len(timepoints),
-    ', '.join(map(str, timepoints))))
-
 #:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-def linear_rgb_interpolation (start_rgb, mid_rgb, end_rgb, position):
+def linear_rgb_interpolation (start_rgb, end_rgb, fraction):
     rgb = [None, None, None]
     for i in range(3):
-        if (position <= 0.5):
-            lower_rgb, higher_rgb = start_rgb[i], mid_rgb[i]
-            position_ = position * 2
-        else:
-            lower_rgb, higher_rgb = mid_rgb[i], end_rgb[i]
-            position_ = (position - 0.5) * 2
-
-        rgb[i] = int(lower_rgb + (higher_rgb - lower_rgb) * position_)
+        rgb[i] = int(start_rgb[i] + (end_rgb[i] - start_rgb[i]) * fraction)
 
     return tuple(rgb)
 
-def sigmoidal_rgb_interpolation (start_rgb, end_rgb, position):
+def sigmoidal_rgb_interpolation (start_rgb, end_rgb, fraction):
     rgb = [None, None, None]
     for i in range(3):
-        s = 1 / (1 + numpy.exp((0.5 - position) * 10))
+        s = 1 / (1 + numpy.exp((0.5 - fraction) * 10))
         rgb[i] = int(start_rgb[i] + (end_rgb[i] - start_rgb[i]) * s)
 
     return tuple(rgb)
@@ -416,8 +522,10 @@ aggregate = {
     "random":  lambda values: random.choice(values),
 }[options.aggregation_function]
 
-colors = {}
+ignored_graphic_elements = []
 for graphic_element, linked_entities in graphic_elements.iteritems():
+    graphic_options, mid_value, colors = None, None, []
+
     # for each timepoint,
     for timepoint_n in range(len(timepoints)):
         # collect the activity level(s) of the linked entities
@@ -425,7 +533,26 @@ for graphic_element, linked_entities in graphic_elements.iteritems():
         for entity_key in linked_entities:
             if (not entity_key in levels):
                 continue
-            activity_levels.append(levels[entity_key][timepoint_n])
+
+            graphic_options_, activity_levels_, mid_value_ = levels[entity_key]
+
+            if (graphic_options is not None) and \
+               (graphic_options != graphic_options_):
+                error(
+                    "inconsistent graphic options among entities sharing " +\
+                    "the same graphic overlay; entities are: %s" % \
+                    ', '.join(linked_entities))
+
+            if (mid_value is not None) and \
+               (mid_value != mid_value_):
+                error(
+                    "inconsistent mid values among entities sharing " +\
+                    "the same graphic overlay; entities are: %s" % \
+                    ', '.join(linked_entities))
+
+            activity_levels.append(activity_levels_[timepoint_n])
+            graphic_options = graphic_options_
+            mid_value = mid_value_
 
         # ignore this time point if no activity level is found
         if (len(activity_levels) == 0):
@@ -435,135 +562,188 @@ for graphic_element, linked_entities in graphic_elements.iteritems():
         activity_level = aggregate(activity_levels)
 
         # calculate the color for this time point
-        timepoint_color = linear_rgb_interpolation(
-            options.start_color,
-            options.mid_color,
-            options.end_color,
-            activity_level)
+        if (mid_value is not None):
+            delta = activity_level - mid_value
 
-        colors.setdefault(graphic_element, []).append(timepoint_color)
+            if (delta < 0):
+                lower_rgb = graphic_options["start-color"]
+                higher_rgb = graphic_options["mid-color"]
+                activity_level = activity_level / mid_value
+            elif (delta > 0):
+                lower_rgb = graphic_options["mid-color"]
+                higher_rgb = graphic_options["end-color"]
+                activity_level = delta / (1 - mid_value)
+            else:
+                lower_rgb = graphic_options["mid-color"]
+                higher_rgb = graphic_options["mid-color"]
+        else:
+            lower_rgb = graphic_options["start-color"]
+            higher_rgb = graphic_options["end-color"]
+
+        colors.append(linear_rgb_interpolation(
+            lower_rgb, higher_rgb, activity_level))
+
+    if (len(colors) == 0):
+        ignored_graphic_elements.append(graphic_element)
+    else:
+        graphic_elements[graphic_element] = (
+            linked_entities, graphic_options, colors)
+
+for graphic_element in ignored_graphic_elements:
+    del graphic_elements[graphic_element]
 
 del activity_levels
 
 #:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-movie = imageio.save(options.output_fn, fps = options.output_fps)
+with step("generating frames"):
+    movie = imageio.save(options.output_fn, fps = options.output_fps)
 
-if (options.output_duration is None):
-    options.output_duration = len(timepoints)
+    if (options.output_duration is None):
+        options.output_duration = len(timepoints)
 
-logger.debug("output_duration = %d" % options.output_duration)
+    logger.debug("output_duration = %d" % options.output_duration)
 
-tick_length = 1 / options.output_fps
-logger.debug("tick_length = %.2g" % tick_length)
+    tick_length = 1 / options.output_fps
+    logger.debug("tick_length = %.2g" % tick_length)
 
-# for each tick (i.e., frame),
-current_time, current_frame = 0., 0
-while (current_time <= options.output_duration):
-    pathway_image_frame = pathway_image.copy()
+    # for each tick (i.e., frame),
+    current_time, current_frame = 0., 0
+    while (current_time <= options.output_duration):
+        pathway_image_frame = pathway_image.copy()
+        pathway_image_frame_canvas = PIL.ImageDraw.Draw(pathway_image_frame)
 
-    # identification of the time point closest to this tick
-    closest_timepoint_n, time_delta = None, sys.maxint
-    for timepoint_n, timepoint in enumerate(timepoints):
-        time_delta_ = timepoint - current_time
-        if (abs(time_delta_) < abs(time_delta)):
-            closest_timepoint_n = timepoint_n
-            time_delta = time_delta_
+        # identification of the time point closest to this tick
+        closest_timepoint_n, time_delta = None, sys.maxint
+        for timepoint_n, timepoint in enumerate(timepoints):
+            time_delta_ = timepoint - current_time
+            if (abs(time_delta_) < abs(time_delta)):
+                closest_timepoint_n = timepoint_n
+                time_delta = time_delta_
 
-    # calculation of the interpolated color for this tick
-    def calculate_color (graphic_element):
-        # special case: we are right on an existing time point
-        if (abs(time_delta) < 1e-3):
-            return colors[graphic_element][closest_timepoint_n]
+        # calculation of the interpolated color for this tick
+        def calculate_color (colors):
+            # special case: we are right on an existing time point
+            if (abs(time_delta) < 1e-3):
+                return colors[closest_timepoint_n]
 
-        elif (time_delta < 0):
-            start_timepoint_n = closest_timepoint_n
-            end_timepoint_n = closest_timepoint_n + 1
-            position = -time_delta
-        else:
-            start_timepoint_n = closest_timepoint_n - 1
-            end_timepoint_n = closest_timepoint_n
-            position = 1 - time_delta
+            elif (time_delta < 0):
+                start_timepoint_n = closest_timepoint_n
+                end_timepoint_n = closest_timepoint_n + 1
+                position = -time_delta
+            else:
+                start_timepoint_n = closest_timepoint_n - 1
+                end_timepoint_n = closest_timepoint_n
+                position = 1 - time_delta
 
-        start_timepoint_n = max(start_timepoint_n, 0)
-        end_timepoint_n = min(end_timepoint_n, len(timepoints) - 1)
+            start_timepoint_n = max(start_timepoint_n, 0)
+            end_timepoint_n = min(end_timepoint_n, len(timepoints) - 1)
 
-        if (start_timepoint_n == end_timepoint_n):
-            return colors[graphic_element][closest_timepoint_n]
+            if (start_timepoint_n == end_timepoint_n):
+                return colors[closest_timepoint_n]
 
-        start_rgb = colors[graphic_element][start_timepoint_n]
-        end_rgb = colors[graphic_element][end_timepoint_n]
+            start_rgb = colors[start_timepoint_n]
+            end_rgb = colors[end_timepoint_n]
 
-        position /= (
-            timepoints[end_timepoint_n] - timepoints[start_timepoint_n])
+            position /= (
+                timepoints[end_timepoint_n] - timepoints[start_timepoint_n])
 
-        return sigmoidal_rgb_interpolation(start_rgb, end_rgb, position)
+            return sigmoidal_rgb_interpolation(start_rgb, end_rgb, position)
 
-    # painting of the graphic elements
-    for graphic_element, linked_entities in graphic_elements.iteritems():
-        if (not graphic_element in colors):
-            continue
+        # painting of the graphic elements
+        for graphic_element in graphic_elements:
+            (linked_entities, graphic_options, colors) = \
+                graphic_elements[graphic_element]
+            (graphic_element_type, x0, y0, x1, y1) = graphic_element
+            padding = graphic_options["blur"] * 2
 
-        (graphic_element_type, x0, y0, x1, y1) = graphic_element
-        padding = options.blur_radius * 2
+            # canvas for the graphic element: large rectangle with the
+            # final color and encompassing the actual graphic element
+            graphic_element_image = PIL.Image.new("RGBA",
+                (int((x1 - x0) * graphic_options["scale"] + padding * 2) + 1,
+                 int((y1 - y0) * graphic_options["scale"] + padding * 2) + 1),
+                color = calculate_color(colors))
 
-        # canvas for the graphic element: large rectangle with the
-        # final color and encompassing the actual graphic element
-        graphic_element_image = PIL.Image.new("RGBA",
-            (int((x1 - x0) * options.scaling_factor + padding * 2) + 1,
-             int((y1 - y0) * options.scaling_factor + padding * 2) + 1),
-            color = calculate_color(graphic_element))
+            graphic_element_canvas = PIL.ImageDraw.Draw(
+                graphic_element_image)
 
-        graphic_element_canvas = PIL.ImageDraw.Draw(
-            graphic_element_image)
+            # mask for the graphic element: blurred
+            # version of the actual graphic element
+            graphic_element_mask = PIL.Image.new("L",
+                graphic_element_image.size, color = 255)
 
-        # mask for the graphic element: blurred
-        # version of the actual graphic element
-        graphic_element_mask = PIL.Image.new("L",
-            graphic_element_image.size, color = 255)
+            graphic_element_mask_canvas = PIL.ImageDraw.Draw(
+                graphic_element_mask)
 
-        graphic_element_mask_canvas = PIL.ImageDraw.Draw(
-            graphic_element_mask)
+            graphic_element_bbox = (
+                padding, padding,
+                (x1 - x0) * graphic_options["scale"] + padding,
+                (y1 - y0) * graphic_options["scale"] + padding)
 
-        graphic_element_bbox = (
-            padding, padding,
-            (x1 - x0) * options.scaling_factor + padding,
-            (y1 - y0) * options.scaling_factor + padding)
+            if (graphic_element_type == "rectangle"):
+                graphic_element_mask_canvas.rectangle(
+                    graphic_element_bbox,
+                    outline = 0, fill = 0)
 
-        if (graphic_element_type == "rectangle"):
-            graphic_element_mask_canvas.rectangle(
-                graphic_element_bbox,
-                outline = 0, fill = 0)
+            elif (graphic_element_type == "circle"):
+                graphic_element_mask_canvas.ellipse(
+                    graphic_element_bbox,
+                    outline = 0, fill = 0)
 
-        elif (graphic_element_type == "circle"):
-            graphic_element_mask_canvas.ellipse(
-                graphic_element_bbox,
-                outline = 0, fill = 0)
+            graphic_element_mask = graphic_element_mask\
+                .filter(PIL.ImageFilter.GaussianBlur(
+                    radius = graphic_options["blur"]))
 
-        graphic_element_mask = graphic_element_mask\
-            .filter(PIL.ImageFilter.GaussianBlur(radius = options.blur_radius))
+            graphic_element_mask = graphic_element_mask.point(
+                lambda v: (255 - v) * (1 - graphic_options["transparency"] / 255))
 
-        graphic_element_mask = graphic_element_mask.point(
-            lambda v: (255 - v) * (1 - options.transparency_level / 255))
+            # the mask is used to set the alpha
+            # channel of the graphic element...
+            graphic_element_image.putalpha(graphic_element_mask)
 
-        # the mask is used to set the alpha
-        # channel of the graphic element...
-        graphic_element_image.putalpha(graphic_element_mask)
+            # ...and the result is pasted onto the frame
+            pathway_image_frame.paste(
+                graphic_element_image,
+                (int(x0 - padding - 0.5 * (x1 - x0) * (graphic_options["scale"] - 1)),
+                 int(y0 - padding - 0.5 * (y1 - y0) * (graphic_options["scale"] - 1))),
+                graphic_element_image)
 
-        # ...and the result is pasted onto the frame
-        pathway_image_frame.paste(
-            graphic_element_image,
-            (int(x0 - padding - 0.5 * (x1 - x0) * (options.scaling_factor - 1)),
-             int(y0 - padding - 0.5 * (y1 - y0) * (options.scaling_factor - 1))),
-            graphic_element_image)
+            # show labels on entities, if requested
+            if (options.show_labels):
+                label = ' '.join([entity_id for entity_id, entity_type in linked_entities])
+                label_width, label_height = label_font.getsize(label)
+                label_x = x0 + (x1 - x0) / 2 - label_width / 2
+                label_y = y0 + (y1 - y0) / 2 + 12
 
-        # code for rounded rectangles: http://web.archive.org/web/20130306020911/http://nadiana.com/pil-tutorial-basic-advanced-drawing#Drawing_Rounded_Corners_Rectangle
+                pathway_image_frame_canvas.rectangle(
+                    (label_x - 1, label_y - 1,
+                     label_x + label_width + 1,
+                     label_y + label_height + 1),
+                    fill = (255, 255, 255, 20))
 
-    movie.append_data(numpy.array(pathway_image_frame))
-    #pathway_image_frame.save(
-    #    "%s_frame_%04d.png" % (options.output_fn[:-4], current_frame))
+                pathway_image_frame_canvas.text(
+                    (label_x, label_y),
+                    label,
+                    fill = (0, 0, 0), font = label_font)
 
-    current_time += tick_length
-    current_frame += 1
+        # show the current timepoint on the lower right corner
+        label = "Timepoint #%d (out of %d)" % (
+            closest_timepoint_n + 1, len(timepoints))
+        label_width, label_height = label_font.getsize(label)
+
+        picture_width, picture_height = pathway_image_frame.size
+        pathway_image_frame_canvas.text(
+            (picture_width - label_width - 5,
+             picture_height - label_height - 5),
+            label,
+            fill = (0, 0, 0), font = label_font)
+
+        # add this frame to the animated GIF
+        movie.append_data(numpy.array(pathway_image_frame))
+
+        current_time += tick_length
+        current_frame += 1
+
+    del movie
 
 logger.info("all done.")
