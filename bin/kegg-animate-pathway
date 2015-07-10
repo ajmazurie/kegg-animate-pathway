@@ -279,7 +279,7 @@ with step("retrieving information about pathway %s" % options.pathway_id):
         if (pathway_image.mode != "RGBA"):
             pathway_image = pathway_image.convert(mode = "RGBA")
 
-    logger.info("found pathway \"%s\" (organism '%s', pathway #%s)" % (
+    logger.info("found pathway \"%s\" (organism '%s', pathway no. %s)" % (
         pathway_title, organism_id, pathway_id))
 
 def list_graphic_elements (kgml_d):
@@ -307,15 +307,22 @@ def list_graphic_elements (kgml_d):
         # extract and return the entity identifiers
         if (entity_type == "gene"):
             for entity_id in entity_ids:
-                assert (entity_id.startswith(organism_id))
-                entity_id = entity_id[len(organism_id) + 1:]
+                if (not entity_id.startswith(organism_id)):
+                    error("invalid gene identifier: %s" % entity_id)
 
+                entity_id = entity_id[len(organism_id) + 1:]
                 yield (entity_id, entity_type, graphic_element)
 
         elif (entity_type == "compound"):
             for entity_id in entity_ids:
-                assert (entity_id.startswith("CPD:"))
-                entity_id = entity_id[4:]
+                namespace = None
+                for ns in ("CPD", "GL"):
+                    if (entity_id.startswith(ns + ':')):
+                        namespace = ns
+                        entity_id = entity_id[len(ns)+1:]
+
+                if (namespace is None):
+                    error("unknown entity type: %s" % entity_id)
 
                 yield (entity_id, entity_type, graphic_element)
 
@@ -382,8 +389,9 @@ def parse_entity_name (entity_name):
     if (entity_name_.startswith(organism_id.upper() + ':')):
         return (entity_name_[len(organism_id)+1:], "gene")
 
-    if (entity_name_.startswith("CPD:")):
-        return (entity_name_[4:], "compound")
+    for ns in ("CPD", "GL"):
+        if (entity_name_.startswith(ns + ':')):
+            return (entity_name_[len(ns)+1:], "compound")
 
     return (entity_name_, None)
 
@@ -441,6 +449,10 @@ for dataset_options in datasets:
             {True: "ies", False: "y"}[len(levels_) > 1],
             len(levels_) + len(ignored_entities)))
 
+        if (len(levels_) == 0):
+            logger.warning("no activity level found mapping to this pathway")
+            continue
+
         if (min_level == max_level):
             error("no variation found in activity levels")
 
@@ -493,7 +505,7 @@ for dataset_options in datasets:
         ', '.join(map(str, timepoints))))
 
 if (len(levels) == 0):
-    error("no activity level found")
+    error("no activity level found mapping to this pathway")
 
 del entities
 

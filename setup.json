@@ -1,6 +1,0 @@
-{
-    "project_name": "kegg-animate-pathway",
-    "project_description": "Creation of animated KEGG pathway maps based on expression and/or abundance levels for genes and compounds",
-    "project_author": "Aurelien Mazurie <ajmazurie@oenone.net>",
-    "project_status": "RELEASE_CANDIDATE"
-}
